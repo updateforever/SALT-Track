@@ -230,45 +230,52 @@ def build_dataloaders(cfg, settings):
 
 def get_optimizer_scheduler(net, cfg):
     train_type = getattr(cfg.TRAIN, "TYPE", None)
-    train_type = ""
-    if train_type == "peft":
-        param_dicts = [
-            {"params": [p for n, p in net.named_parameters() if "prompt" in n or "interface" in n and p.requires_grad]},
-        ]
-        for n, p in net.named_parameters():
-            if ("prompt" not in n) and ("interface" not in n):
-                p.requires_grad = False
+    train_type = train_type.lower() if isinstance(train_type, str) else "full"
+    freeze_text_side = getattr(cfg.TRAIN, "FREEZE_TEXT_SIDE", True)
 
-        if is_main_process():
-            print("Learnable parameters are shown below.")
-            for n, p in net.named_parameters():
-                if p.requires_grad:
-                    print(n)
+    # WYP: 先根据训练模式设置可训练参数，再统一构建优化器。
+    if train_type == "peft_lora":
+        for _, p in net.named_parameters():
+            p.requires_grad = False
+        for n, p in net.named_parameters():
+            if "lora_A" in n or "lora_B" in n:
+                p.requires_grad = True
     else:
-        for n, p in net.named_parameters():
-            if 'text_encoder' in n and p.requires_grad:
-                p.requires_grad = False
-                print("Freeze: ", n)
+        for _, p in net.named_parameters():
+            p.requires_grad = True
 
-        # for n, p in net.named_parameters():
-        #     if 'backbone' in n and p.requires_grad:
-        #         p.requires_grad = False
-        #         print("Freeze: ", n)
-
-        param_dicts = [
-            {"params": [p for n, p in net.named_parameters() if "backbone" not in n and p.requires_grad]},
-            {
-                "params": [p for n, p in net.named_parameters() if "backbone" in n and p.requires_grad],
-                "lr": cfg.TRAIN.LR * cfg.TRAIN.ENCODER_MULTIPLIER,
-            },
-        ]
-        train_n_list = []
-        if is_main_process():
-            print("Learnable parameters are shown below.")
+        if freeze_text_side:
+            freeze_keywords = ["text_encoder", "text_adj", "text_sub_idnex_classifier"]
             for n, p in net.named_parameters():
-                if p.requires_grad:
-                    train_n_list.append(n)
-                    print(n)
+                if any(keyword in n for keyword in freeze_keywords):
+                    p.requires_grad = False
+
+    if getattr(cfg.TRAIN, "FREEZE_ENCODER", False):
+        open_layers = getattr(cfg.TRAIN, "ENCODER_OPEN", [])
+        for n, p in net.named_parameters():
+            if "backbone" in n:
+                p.requires_grad = any(open_name in n for open_name in open_layers)
+
+    trainable_non_backbone = [p for n, p in net.named_parameters() if "backbone" not in n and p.requires_grad]
+    trainable_backbone = [p for n, p in net.named_parameters() if "backbone" in n and p.requires_grad]
+    param_dicts = []
+    if len(trainable_non_backbone) > 0:
+        param_dicts.append({"params": trainable_non_backbone})
+    if len(trainable_backbone) > 0:
+        param_dicts.append({
+            "params": trainable_backbone,
+            "lr": cfg.TRAIN.LR * cfg.TRAIN.ENCODER_MULTIPLIER,
+        })
+
+    if len(param_dicts) == 0:
+        raise ValueError("No trainable parameters found. Please check TRAIN.TYPE and freeze settings.")
+
+    if is_main_process():
+        print("WYP: Train type =", train_type)
+        print("Learnable parameters are shown below.")
+        for n, p in net.named_parameters():
+            if p.requires_grad:
+                print(n)
 
     if cfg.TRAIN.OPTIMIZER == "ADAMW":
         optimizer = torch.optim.AdamW(param_dicts, lr=cfg.TRAIN.LR,

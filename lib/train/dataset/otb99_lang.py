@@ -37,7 +37,8 @@ class Otb99_lang(BaseVideoDataset):
                     vid_ids or split option can be used at a time.
             data_fraction - Fraction of dataset to be used. The complete dataset is used by default
         """
-        root = env_settings().lasot_dir if root is None else root
+        # WYP: OTB99 的默认根目录应该来自 otb99_dir，而不是 lasot_dir。
+        root = env_settings().otb99_dir if root is None else root
         super().__init__('Otb99_lang', root, image_loader)
         # Keep a list of all classes
         self.class_list = [f for f in os.listdir(self.root)]

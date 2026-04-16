@@ -1,4 +1,7 @@
-import tikzplotlib
+try:
+    import tikzplotlib
+except Exception:
+    tikzplotlib = None
 import matplotlib
 import matplotlib.pyplot as plt
 import os
@@ -162,7 +165,8 @@ def plot_draw_save(y, x, scores, trackers, plot_draw_styles, result_plot_path, p
     ax.grid(True, linestyle='-.')
     fig.tight_layout()
 
-    tikzplotlib.save('{}/{}_plot.tex'.format(result_plot_path, plot_type))
+    if tikzplotlib is not None:
+        tikzplotlib.save('{}/{}_plot.tex'.format(result_plot_path, plot_type))
     fig.savefig('{}/{}_plot.pdf'.format(result_plot_path, plot_type), dpi=300, format='pdf', transparent=True)
     plt.draw()
 

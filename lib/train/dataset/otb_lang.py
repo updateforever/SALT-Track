@@ -30,6 +30,11 @@ class OTB_Lang(BaseVideoDataset):
             self.sequence_list = self._get_sequence_info_list_test()
             self.nlp_root = os.path.join(self.base_path, 'OTB_query_test')
 
+        # WYP: 不同来源的 OTB/OTB-Lang 数据组织并不完全一致。
+        # 这里根据本地真实存在的视频、标注和语言文件过滤不可用序列，
+        # 避免像 Jogging 这种版本差异样本反复触发 sampler 异常。
+        self.sequence_list = self._filter_available_sequences(self.sequence_list)
+
         if data_fraction is not None:
             self.sequence_list = random.sample(self.sequence_list, int(len(self.sequence_list) * data_fraction))
 
@@ -42,8 +47,9 @@ class OTB_Lang(BaseVideoDataset):
                                                "resource/text_infor/otb99_4o_v3_extract_mask.json")
         with open(self.subject_infor_path, 'r') as file:
             self.subject_infor = json.load(file)
+
     def __len__(self):
-        return len(self.sequence_info_list)
+        return len(self.sequence_list)
 
     def get_name(self):
         return 'OTB_Lang'
@@ -62,7 +68,7 @@ class OTB_Lang(BaseVideoDataset):
         bb_anno_file = self.sequence_list[seq_id]['anno_path']
         bb_path = os.path.join(self.video_path, bb_anno_file)
 
-        gt = load_text(str(bb_path), delimiter=(',', None), dtype=np.float64, backend='numpy')
+        gt = load_text(str(bb_path), delimiter=(',', None), dtype=np.float32, backend='numpy')
 
         start_frame = self.sequence_list[seq_id]['startFrame'] - 1
         end_frame = self.sequence_list[seq_id]['endFrame'] - 1
@@ -103,6 +109,32 @@ class OTB_Lang(BaseVideoDataset):
         assert (exp_str != '' and not exp_str is None), 'ERROR: Language File is None: "{}"'.format(exp_path)
         exp_str = clean_string(exp_str)
         return exp_str
+
+    def _filter_available_sequences(self, sequence_info_list):
+        valid_sequence_list = []
+        missing_items = []
+
+        for seq_info in sequence_info_list:
+            seq_path = os.path.join(self.video_path, seq_info['path'])
+            anno_path = os.path.join(self.video_path, seq_info['anno_path'])
+            exp_path = os.path.join(self.nlp_root, seq_info['name'] + '.txt')
+
+            if os.path.isdir(seq_path) and os.path.isfile(anno_path) and os.path.isfile(exp_path):
+                valid_sequence_list.append(seq_info)
+            else:
+                missing_items.append((seq_info['name'], seq_path, anno_path, exp_path))
+
+        if missing_items:
+            print("WYP: OTB_Lang skipped {} unavailable sequences.".format(len(missing_items)))
+            for name, seq_path, anno_path, exp_path in missing_items[:10]:
+                print("WYP: skip {} | seq:{} | anno:{} | lang:{}".format(
+                    name,
+                    os.path.isdir(seq_path),
+                    os.path.isfile(anno_path),
+                    os.path.isfile(exp_path)
+                ))
+
+        return valid_sequence_list
     def get_subject_mask_infor(self,seq_id):
         seq_name = self.sequence_list[seq_id]
         seq_sub_mask_infor = self.subject_infor[seq_name["name"]]["subject_extrack_mask_infor"]

@@ -2,7 +2,11 @@ import torch
 import torch.utils.data.dataloader
 import importlib
 import collections
-from torch._six import string_classes
+from collections.abc import Mapping, Sequence
+
+# PyTorch 1.x 曾通过 torch._six 暴露 string_classes，但新版本已删除。
+# 这里直接兼容为 Python 的 str/bytes 元组即可。
+string_classes = (str, bytes)
 int_classes = int
 from lib.utils import TensorDict, TensorList
 
@@ -53,12 +57,12 @@ def ltr_collate(batch):
         return batch
     elif isinstance(batch[0], TensorDict):
         return TensorDict({key: ltr_collate([d[key] for d in batch]) for key in batch[0]})
-    elif isinstance(batch[0], collections.Mapping):
+    elif isinstance(batch[0], Mapping):
         return {key: ltr_collate([d[key] for d in batch]) for key in batch[0]}
     elif isinstance(batch[0], TensorList):
         transposed = zip(*batch)
         return TensorList([ltr_collate(samples) for samples in transposed])
-    elif isinstance(batch[0], collections.Sequence):
+    elif isinstance(batch[0], Sequence):
         transposed = zip(*batch)
         return [ltr_collate(samples) for samples in transposed]
     elif batch[0] is None:
@@ -102,12 +106,12 @@ def ltr_collate_stack1(batch):
         return batch
     elif isinstance(batch[0], TensorDict):
         return TensorDict({key: ltr_collate_stack1([d[key] for d in batch]) for key in batch[0]})
-    elif isinstance(batch[0], collections.Mapping):
+    elif isinstance(batch[0], Mapping):
         return {key: ltr_collate_stack1([d[key] for d in batch]) for key in batch[0]}
     elif isinstance(batch[0], TensorList):
         transposed = zip(*batch)
         return TensorList([ltr_collate_stack1(samples) for samples in transposed])
-    elif isinstance(batch[0], collections.Sequence):
+    elif isinstance(batch[0], Sequence):
         transposed = zip(*batch)
         return [ltr_collate_stack1(samples) for samples in transposed]
     elif batch[0] is None:

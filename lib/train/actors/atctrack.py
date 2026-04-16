@@ -20,8 +20,20 @@ class ATCTrackActor(BaseActor):
         self.task_cls_loss_fn = nn.CrossEntropyLoss()
         # reg loss
         self.confidence_reg_loss = nn.MSELoss()
-        # sub mask index pred loss
-        self.sub_mask_index_cls_loss = nn.BCELoss()
+
+        # 语义对齐相关配置
+        self.use_semantic_align = cfg.MODEL.get('USE_SEMANTIC_ALIGN', False) if cfg else False
+        if self.use_semantic_align:
+            # WYP: 最小版语义监督权重
+            self.semantic_weight_stage1 = cfg.TRAIN.get('SEMANTIC_WEIGHT_STAGE1', 0.2)
+            self.semantic_weight_stage2 = cfg.TRAIN.get('SEMANTIC_WEIGHT_STAGE2', 0.05)
+            self.semantic_visual_weight = cfg.TRAIN.get('SEMANTIC_VISUAL_WEIGHT', 1.0)
+            self.semantic_text_weight = cfg.TRAIN.get('SEMANTIC_TEXT_WEIGHT', 1.0)
+            self.semantic_gate_type = cfg.TRAIN.get('SEMANTIC_GATE_TYPE', 'clamp')
+            self.semantic_gate_tau = cfg.TRAIN.get('SEMANTIC_GATE_TAU', 0.05)
+            self.semantic_gate_floor = cfg.TRAIN.get('SEMANTIC_GATE_FLOOR', 0.0)
+            self.stage1_ratio = cfg.MODEL.get('LORA', {}).get('STAGE1_RATIO', 0.3) if cfg.MODEL.get('LORA') else 0.3
+            self.total_epochs = cfg.TRAIN.EPOCH
     def fix_bns(self):
         net = self.net.module if multigpu.is_multi_gpu(self.net) else self.net
         net.box_head.apply(self.fix_bn)
@@ -48,6 +60,17 @@ class ATCTrackActor(BaseActor):
         loss, status = self.compute_losses(out_dict, data)
 
         return loss, status
+
+    def get_semantic_weight(self, epoch):
+        """根据训练阶段返回不同的语义对齐权重"""
+        if not self.use_semantic_align:
+            return 0.0
+
+        stage1_epochs = int(self.total_epochs * self.stage1_ratio)
+        if epoch < stage1_epochs:
+            return self.semantic_weight_stage1  # Stage 1: 语义探索
+        else:
+            return self.semantic_weight_stage2  # Stage 2: 精细定位
 
     def forward_pass(self, data):
         # assert len(data['template_images']) == 1
@@ -83,11 +106,17 @@ class ATCTrackActor(BaseActor):
             index_list = list(map(int, item_list[-1].split(",")))
             subject_mask_list.append(index_list)
 
+        # WYP: 训练时不再把数据标签里的 subject mask 喂给文本前向。
+        # 这样可以让训练和推理的文本侧前向保持一致：
+        # 1. 都只依赖原始文本输入
+        # 2. 都由模型自己预测 subject-related token importance
+        # subject_mask_list 这里先保留解析，便于后续若要恢复 token-level 监督时继续使用。
         out_dict = self.net(template=template_list,
                             search=search_list,
                             soft_token_template_mask = bbox_mask_list,
                             exp_str=exp_str_list,
-                            exp_subject_mask = subject_mask_list
+                            exp_subject_mask = None,
+                            search_anno=data['search_anno']
                             )
 
         return out_dict
@@ -126,16 +155,55 @@ class ATCTrackActor(BaseActor):
         confidence_pred = pred_dict["confidence_pred"].squeeze(1)
         confidence_loss = self.confidence_reg_loss(confidence_pred.float(), iou.float())
 
-        index_cls_loss = self.sub_mask_index_cls_loss(pred_dict["subject_infor_mask_pred"].squeeze(-1),
-                                                      pred_dict["subject_infor_mask_gt"])
+        # WYP: 最小版语义监督
+        # visual loss: Pred 和 GT 的实例特征应该接近
+        # text loss:   Pred 和文本特征应该接近
+        # gate:        如果 GT 比 Pred 更接近文本，则增强文本辅助损失，否则削弱
+        semantic_visual_loss = torch.tensor(0.0, device=l1_loss.device)
+        semantic_text_loss = torch.tensor(0.0, device=l1_loss.device)
+        semantic_loss = torch.tensor(0.0, device=l1_loss.device)
+        semantic_gate = torch.tensor(0.0, device=l1_loss.device)
+        gt_text_similarity = torch.tensor(0.0, device=l1_loss.device)
+        pred_text_similarity = torch.tensor(0.0, device=l1_loss.device)
+
+        if self.use_semantic_align and 'pred_visual_features' in pred_dict and 'gt_visual_features' in pred_dict and 'target_text_features' in pred_dict:
+            pred_feat = pred_dict['pred_visual_features']
+            gt_feat = pred_dict['gt_visual_features']
+            text_feat = pred_dict['target_text_features']
+
+            if gt_feat is not None and text_feat is not None:
+                semantic_visual_loss = 1 - torch.nn.functional.cosine_similarity(pred_feat, gt_feat, dim=-1).mean()
+
+                pred_text_sim = torch.nn.functional.cosine_similarity(pred_feat, text_feat, dim=-1)
+                gt_text_sim = torch.nn.functional.cosine_similarity(gt_feat, text_feat, dim=-1)
+                pred_text_similarity = pred_text_sim.mean()
+                gt_text_similarity = gt_text_sim.mean()
+
+                # WYP: 平滑版 gate，避免 clamp 把文本项长期压成接近 0。
+                delta_text_sim = (gt_text_sim - pred_text_sim).detach()
+                if self.semantic_gate_type == 'sigmoid':
+                    semantic_gate_per_sample = torch.sigmoid(delta_text_sim / self.semantic_gate_tau)
+                    if self.semantic_gate_floor > 0:
+                        semantic_gate_per_sample = self.semantic_gate_floor + \
+                                                   (1.0 - self.semantic_gate_floor) * semantic_gate_per_sample
+                else:
+                    semantic_gate_per_sample = torch.clamp(delta_text_sim, min=0.0)
+                semantic_gate = semantic_gate_per_sample.mean()
+                semantic_text_loss = (1 - pred_text_sim).mean()
+
+                current_epoch = gt_dict.get('epoch', 0)
+                lambda_semantic = self.get_semantic_weight(current_epoch)
+                semantic_loss = self.semantic_visual_weight * semantic_visual_loss + \
+                                self.semantic_text_weight * semantic_gate * semantic_text_loss
+            else:
+                lambda_semantic = 0.0
+        else:
+            lambda_semantic = 0.0
 
         # weighted sum
-        loss = self.loss_weight['giou'] * giou_loss + self.loss_weight['l1'] * l1_loss + self.loss_weight['focal'] * location_loss  + confidence_loss + index_cls_loss*0.2
-
-        # 计算 index_cls 的准确率
-        predicted = pred_dict["subject_infor_mask_pred"].squeeze(-1) > 0.5  # 使用阈值0.5将logits转换为0或1
-        num = pred_dict["subject_infor_mask_gt"].numel()
-        index_cls_acc = (predicted == pred_dict["subject_infor_mask_gt"]).sum().item() / num
+        loss = self.loss_weight['giou'] * giou_loss + self.loss_weight['l1'] * l1_loss + \
+               self.loss_weight['focal'] * location_loss + confidence_loss + \
+               lambda_semantic * semantic_loss
 
         if return_status:
             # status for log
@@ -145,10 +213,19 @@ class ATCTrackActor(BaseActor):
                       "Loss/l1": l1_loss.item(),
                       "Loss/confidence_loss": confidence_loss.item(),
                       "Loss/location": location_loss.item(),
-                      "index_cls_loss": index_cls_loss.item(),
-                      "index_cls_acc": index_cls_acc,
                       "IoU_main": mean_iou.item()
                       }
+
+            # 添加语义对齐相关的日志
+            if self.use_semantic_align:
+                status["Loss/semantic"] = semantic_loss.item()
+                status["Loss/semantic_visual"] = semantic_visual_loss.item()
+                status["Loss/semantic_text"] = semantic_text_loss.item()
+                status["semantic_weight"] = lambda_semantic
+                status["semantic_gate"] = semantic_gate.item()
+                status["gt_text_similarity"] = gt_text_similarity.item()
+                status["pred_text_similarity"] = pred_text_similarity.item()
+
             return loss, status
         else:
             return loss

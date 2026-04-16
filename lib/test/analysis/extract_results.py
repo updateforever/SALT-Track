@@ -123,6 +123,54 @@ def extract_results(trackers, dataset, report_name, skip_missing_seq=False, plot
 
     valid_sequence = torch.ones(len(dataset), dtype=torch.uint8)
 
+    def _find_legacy_result_file(trk, seq):
+        """
+        WYP: 兼容历史测试结果目录与文件命名。
+        旧测试脚本会把结果写到:
+            output/<tracker_param>/<dataset>/<dataset>/
+        同时文件名中可能带:
+            -Done / _done / _time / -Done_time
+        这里在标准路径找不到时做一次回退匹配，优先复用已有结果。
+        """
+        legacy_root = os.path.join(settings.save_dir, trk.parameter_name, seq.dataset, seq.dataset)
+        if not os.path.isdir(legacy_root):
+            return None
+
+        candidate_names = [
+            seq.name,
+            seq.name.replace('_done', '-Done'),
+            seq.name.replace('_Done', '-Done'),
+            seq.name.replace('-Done', '_done'),
+        ]
+
+        candidate_suffixes = [
+            '.txt',
+            '_time.txt',
+            '-Done.txt',
+            '-Done_time.txt',
+            '_done.txt',
+            '_done_time.txt',
+            '_Done.txt',
+            '_Done_time.txt',
+        ]
+
+        for cand in candidate_names:
+            for suffix in candidate_suffixes:
+                cand_path = os.path.join(legacy_root, '{}{}'.format(cand, suffix if not cand.endswith(suffix[:-4]) else '.txt'))
+                if os.path.isfile(cand_path):
+                    return cand_path
+
+        # 再做一次宽松匹配：忽略大小写、Done/time 后缀差异。
+        seq_key = seq.name.lower().replace('-done', '').replace('_done', '').replace('_time', '')
+        for file_name in os.listdir(legacy_root):
+            if not file_name.endswith('.txt'):
+                continue
+            file_key = file_name[:-4].lower().replace('-done', '').replace('_done', '').replace('_time', '')
+            if file_key == seq_key:
+                return os.path.join(legacy_root, file_name)
+
+        return None
+
     for seq_id, seq in enumerate(tqdm(dataset)):
         # Load anno
         anno_bb = torch.tensor(seq.ground_truth_rect)
@@ -138,7 +186,10 @@ def extract_results(trackers, dataset, report_name, skip_missing_seq=False, plot
             if os.path.isfile(results_path):
                 pred_bb = torch.tensor(load_text(str(results_path), delimiter=('\t', ','), dtype=np.float64))
             else:
-                if skip_missing_seq:
+                legacy_results_path = _find_legacy_result_file(trk, seq)
+                if legacy_results_path is not None:
+                    pred_bb = torch.tensor(load_text(str(legacy_results_path), delimiter=('\t', ','), dtype=np.float64))
+                elif skip_missing_seq:
                     valid_sequence[seq_id] = 0
                     break
                 else:

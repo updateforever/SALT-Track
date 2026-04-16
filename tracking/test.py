@@ -54,7 +54,7 @@ def run_tracker(tracker_name, tracker_param, run_id=None, dataset_name='otb', se
 
 
 def main():
-    os.environ['CUDA_VISIBLE_DEVICES'] = "0"
+    # os.environ['CUDA_VISIBLE_DEVICES'] = "0"
     parser = argparse.ArgumentParser(description='Run tracker on sequence or dataset.')
     parser.add_argument('--tracker_name', type=str, default="atctrack", help='Name of tracking method.')
     parser.add_argument('--tracker_param', type=str, default="atctrack_base", help='Name of config file.')    # atctrack_base  atctrack_large

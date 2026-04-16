@@ -1,0 +1,152 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python 调试：当前文件",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "python": "/root/user-data/envs/wyp_vlt/bin/python",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "PYTHONNOUSERSITE": "1",
+                "PYTHONHOME": ""
+            },
+            "justMyCode": false
+        },
+        {
+            "name": "语义调试：最小训练流程",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/test_training_flow.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "python": "/root/user-data/envs/wyp_vlt/bin/python",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "PYTHONNOUSERSITE": "1",
+                "PYTHONHOME": ""
+            },
+            "justMyCode": false
+        },
+        {
+            "name": "ATCTrack 训练：语义版全量训练",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/lib/train/run_training.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "python": "/root/user-data/envs/wyp_vlt/bin/python",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "PYTHONNOUSERSITE": "1",
+                "PYTHONHOME": "",
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "args": [
+                "--script", "atctrack",
+                "--config", "atctrack_base_semantic",
+                "--save_dir", "${workspaceFolder}/output",
+                "--use_lmdb", "0",
+                "--seed", "42"
+            ],
+            "justMyCode": false
+        },
+        {
+            "name": "ATCTrack 训练：语义版 LoRA 微调",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/lib/train/run_training.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "python": "/root/user-data/envs/wyp_vlt/bin/python",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "PYTHONNOUSERSITE": "1",
+                "PYTHONHOME": "",
+                "CUDA_VISIBLE_DEVICES": "1"
+            },
+            "args": [
+                "--script", "atctrack",
+                "--config", "atctrack_base_semantic_lora",
+                "--save_dir", "${workspaceFolder}/output",
+                "--use_lmdb", "0",
+                "--seed", "42"
+            ],
+            "justMyCode": false
+        },
+        {
+            "name": "ATCTrack 测试：语义版 TNL2K 单序列",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/tracking/test.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "python": "/root/user-data/envs/wyp_vlt/bin/python",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "PYTHONNOUSERSITE": "1",
+                "PYTHONHOME": "",
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "args": [
+                "--tracker_name", "atctrack",
+                "--tracker_param", "atctrack_base_semantic",
+                "--dataset_name", "tnl2k",
+                "--sequence", "0",
+                "--threads", "0",
+                "--num_gpus", "1",
+                "--ckpt_path", "/root/user-data/MODEL_WEIGHTS_PUBLIC/VLT_weights/ATCTrack-master/models/ATCTrack_b.pth.tar"
+            ],
+            "justMyCode": false
+        },
+        {
+            "name": "ATCTrack 测试：Base 版 TNL2K",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/tracking/test.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "python": "/root/user-data/envs/wyp_vlt/bin/python",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "PYTHONNOUSERSITE": "1",
+                "PYTHONHOME": ""
+            },
+            "args": [
+                "--tracker_name", "atctrack",
+                "--tracker_param", "atctrack_base",
+                "--dataset_name", "tnl2k",
+                "--threads", "0",
+                "--num_gpus", "1",
+                "--ckpt_path", "/root/user-data/MODEL_WEIGHTS_PUBLIC/VLT_weights/ATCTrack-master/models/ATCTrack_b.pth.tar"
+            ],
+            "justMyCode": false
+        },
+        {
+            "name": "ATCTrack 测试：Large 版 TNL2K",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/tracking/test.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "python": "/root/user-data/envs/wyp_vlt/bin/python",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "PYTHONNOUSERSITE": "1",
+                "PYTHONHOME": ""
+            },
+            "args": [
+                "--tracker_name", "atctrack",
+                "--tracker_param", "atctrack_large",
+                "--dataset_name", "tnl2k",
+                "--threads", "1",
+                "--num_gpus", "1",
+                "--ckpt_path", "/root/user-data/MODEL_WEIGHTS_PUBLIC/VLT_weights/ATCTrack-master/models/ATCTrack_l.pth.tar"
+            ],
+            "justMyCode": false
+        }
+    ]
+}

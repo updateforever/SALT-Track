@@ -1,33 +1,48 @@
+from pathlib import Path
+
+
+def _project_root() -> Path:
+    # local.py -> admin -> train -> lib -> repo root
+    return Path(__file__).resolve().parents[3]
+
+
+def _dataset_root() -> Path:
+    return Path("/root/user-data/PUBLIC_DATASETS")
+
+
 class EnvironmentSettings:
     def __init__(self):
-        self.workspace_dir = '.'    # Base directory for saving network checkpoints.
-        self.tensorboard_dir = './tensorboard'    # Directory for tensorboard files.
-        self.pretrained_networks = './resource'
+        prj_dir = _project_root()
+        data_root = _dataset_root()
+
+        self.workspace_dir = str(prj_dir)
+        self.tensorboard_dir = str(prj_dir / "tensorboard")
+        self.pretrained_networks = str(prj_dir / "resource" / "pretrained_models")
 
         # rgb
-        self.got10k_dir = './GOT-10k/data/train'
-        self.got10k_val_dir = './GOT-10k/data/val'
-        self.got10k_lmdb_dir = './GOT-10k/data/train'
+        self.got10k_dir = str(data_root / "GOT10K" / "train") # /root/user-data/PUBLIC_DATASETS/GOT10K/train/
+        self.got10k_val_dir = str(data_root / "GOT10K" / "val")
+        self.got10k_lmdb_dir = str(data_root / "got10k_lmdb")
 
-        self.lasot_dir = './LaSOT/data'
-        self.lasot_lmdb_dir = './LaSOT/data'
+        self.lasot_dir = str(data_root / "lasot")
+        self.lasot_lmdb_dir = str(data_root / "lasot_lmdb")
 
-        self.trackingnet_dir = './TrackingNet'
-        self.trackingnet_lmdb_dir = './TrackingNet'
+        self.trackingnet_dir = str(data_root / "trackingnet")
+        self.trackingnet_lmdb_dir = str(data_root / "trackingnet_lmdb")
 
-        self.coco_lmdb_dir = './COCO2017'
-        self.coco_dir = './COCO2017'
-        self.ref_coco_dir = './video_ds/refcoco'
-        self.otb99_dir = './video_ds/OTB/OTB_sentences/OTB_sentences'
+        self.coco_lmdb_dir = str(data_root / "coco_lmdb")
+        self.coco_dir = str(data_root / "coco")
+        self.ref_coco_dir = str(data_root / "refcoco")
+        self.otb99_dir = str(data_root / "OTB_lang")
 
-        self.tnl2k_dir = './TNL2k/TNL2K_train_subset'
-        self.vasttrack_dir = './VastTrack/unisot_train_final_backup'  # for 28
-
+        self.tnl2k_dir = str(data_root / "TNL2K" / "TNL2K_train_subset")
+        self.vasttrack_dir = str(data_root / "VastTrack" / "unisot_train_final_backup")
 
         # rgbt
-        self.lasher_dir = './video_ds/rgb_t/LasHeR0428/LasHeR_Divided_data/trainingset'
+        self.lasher_dir = str(data_root / "LasHeR" / "trainingset")
 
         # rgbe
-        self.visevent_dir = './video_ds/rgbe_ds/VisEvent_dataset/train_subset'
-        # rgbt
-        self.depthtrack_dir = './video_ds/rgbd_ds/depthtrack_train/'
+        self.visevent_dir = str(data_root / "VisEvent_dataset" / "train_subset")
+
+        # rgbd
+        self.depthtrack_dir = str(data_root / "depthtrack_train")
