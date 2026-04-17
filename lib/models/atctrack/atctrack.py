@@ -661,9 +661,10 @@ def build_atctrack(cfg, training=True):
                 param.requires_grad = False
 
     # WYP: LoRA 仅注入视觉/融合模块，避免直接扰动文本锚点。
+    # 这里训练和推理都要注入同样的 LoRA 结构，否则测试时无法完整加载 LoRA checkpoint。
     lora_cfg = getattr(cfg.MODEL, "LORA", None)
     lora_enabled = bool(lora_cfg and getattr(lora_cfg, "ENABLED", False))
-    if training and lora_enabled:
+    if lora_enabled:
         target_modules = list(getattr(lora_cfg, "TARGET_MODULES", ["vl_fusion", "visual_temporal_fusion"]))
         replaced_layers = apply_lora_to_modules(
             model,

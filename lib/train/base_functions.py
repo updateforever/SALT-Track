@@ -15,6 +15,7 @@ from lib.train.dataset.refcoco_seq_JointNLT import RefCOCOSeq as RefCOCOSeq_join
 
 def update_settings(settings, cfg):
     settings.print_interval = cfg.TRAIN.PRINT_INTERVAL
+    settings.save_interval = getattr(cfg.TRAIN, "SAVE_INTERVAL", 10)
     settings.search_area_factor = {'template': getattr(cfg.DATA.TEMPLATE, "FACTOR", None),
                                    'search': getattr(cfg.DATA.SEARCH, "FACTOR", None)}
     settings.output_sz = {'template': getattr(cfg.DATA.TEMPLATE, "SIZE", 128),

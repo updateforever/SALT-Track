@@ -32,7 +32,8 @@ class ATCTrackActor(BaseActor):
             self.semantic_gate_type = cfg.TRAIN.get('SEMANTIC_GATE_TYPE', 'clamp')
             self.semantic_gate_tau = cfg.TRAIN.get('SEMANTIC_GATE_TAU', 0.05)
             self.semantic_gate_floor = cfg.TRAIN.get('SEMANTIC_GATE_FLOOR', 0.0)
-            self.stage1_ratio = cfg.MODEL.get('LORA', {}).get('STAGE1_RATIO', 0.3) if cfg.MODEL.get('LORA') else 0.3
+            # WYP: 语义权重阶段切换不再复用 LoRA 配置，单独放在 TRAIN 里管理。
+            self.stage1_ratio = cfg.TRAIN.get('SEMANTIC_STAGE1_RATIO', 0.4)
             self.total_epochs = cfg.TRAIN.EPOCH
     def fix_bns(self):
         net = self.net.module if multigpu.is_multi_gpu(self.net) else self.net
@@ -65,6 +66,12 @@ class ATCTrackActor(BaseActor):
         """根据训练阶段返回不同的语义对齐权重"""
         if not self.use_semantic_align:
             return 0.0
+
+        if self.semantic_weight_stage1 == self.semantic_weight_stage2:
+            return self.semantic_weight_stage1
+
+        if self.stage1_ratio <= 0:
+            return self.semantic_weight_stage2
 
         stage1_epochs = int(self.total_epochs * self.stage1_ratio)
         if epoch < stage1_epochs:

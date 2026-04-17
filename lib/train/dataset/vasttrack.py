@@ -47,8 +47,11 @@ class VastTrack(BaseVideoDataset):
         ltr_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')
         self.test_seq_list_path = os.path.join(ltr_path, "vasttrack_test/vasttrack_test_list.txt")
 
-        # Keep a list of all classes
-        self.class_list = [f for f in os.listdir(self.root)]
+        # WYP: VastTrack 根目录里可能混有压缩包或其它非目录文件，训练时只保留真实类别目录。
+        self.class_list = [
+            f for f in os.listdir(self.root)
+            if os.path.isdir(os.path.join(self.root, f))
+        ]
         # debug_filter  = []
         # for item in self.class_list:
         #     if "Ru" in item:

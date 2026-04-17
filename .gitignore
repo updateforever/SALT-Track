@@ -62,3 +62,5 @@ logs/
 asset/semantic_align_architecture.svg
 lib/models/atctrack/atctrack.py
 resource/pretrained_models/
+
+archive_20260418/

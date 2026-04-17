@@ -36,7 +36,7 @@ class EnvironmentSettings:
         self.otb99_dir = str(data_root / "OTB_lang")
 
         self.tnl2k_dir = str(data_root / "TNL2K" / "TNL2K_train_subset")
-        self.vasttrack_dir = str(data_root / "VastTrack" / "unisot_train_final_backup")
+        self.vasttrack_dir = str(data_root / "vasttrack")
 
         # rgbt
         self.lasher_dir = str(data_root / "LasHeR" / "trainingset")
