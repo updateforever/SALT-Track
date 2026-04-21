@@ -64,3 +64,5 @@ lib/models/atctrack/atctrack.py
 resource/pretrained_models/
 
 archive_20260418/
+resume_training.sh
+auth.json
