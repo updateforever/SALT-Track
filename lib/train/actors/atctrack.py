@@ -32,6 +32,11 @@ class ATCTrackActor(BaseActor):
             self.semantic_gate_type = cfg.TRAIN.get('SEMANTIC_GATE_TYPE', 'clamp')
             self.semantic_gate_tau = cfg.TRAIN.get('SEMANTIC_GATE_TAU', 0.05)
             self.semantic_gate_floor = cfg.TRAIN.get('SEMANTIC_GATE_FLOOR', 0.0)
+            # WYP: 文本对齐损失类型：'distance' (距离监督) 或 'direction' (方向监督) 或 'both' (两者结合)
+            self.semantic_text_loss_type = cfg.TRAIN.get('SEMANTIC_TEXT_LOSS_TYPE', 'distance')
+            # WYP: 当使用 'both' 时，两种损失的权重
+            self.semantic_distance_weight = cfg.TRAIN.get('SEMANTIC_DISTANCE_WEIGHT', 0.5)
+            self.semantic_direction_weight = cfg.TRAIN.get('SEMANTIC_DIRECTION_WEIGHT', 0.5)
             # WYP: 语义权重阶段切换不再复用 LoRA 配置，单独放在 TRAIN 里管理。
             self.stage1_ratio = cfg.TRAIN.get('SEMANTIC_STAGE1_RATIO', 0.4)
             self.total_epochs = cfg.TRAIN.EPOCH
@@ -179,24 +184,52 @@ class ATCTrackActor(BaseActor):
             text_feat = pred_dict['target_text_features']
 
             if gt_feat is not None and text_feat is not None:
+                # 视觉一致性损失：pred 和 gt 的实例特征应该接近
                 semantic_visual_loss = 1 - torch.nn.functional.cosine_similarity(pred_feat, gt_feat, dim=-1).mean()
 
+                # 计算相似度（用于日志监控）
                 pred_text_sim = torch.nn.functional.cosine_similarity(pred_feat, text_feat, dim=-1)
                 gt_text_sim = torch.nn.functional.cosine_similarity(gt_feat, text_feat, dim=-1)
                 pred_text_similarity = pred_text_sim.mean()
                 gt_text_similarity = gt_text_sim.mean()
 
-                # WYP: 平滑版 gate，避免 clamp 把文本项长期压成接近 0。
+                # WYP: 文本对齐损失 - 支持三种模式
+                if self.semantic_text_loss_type == 'direction':
+                    # 方向监督 - 防止特征坍塌
+                    pred_to_text = torch.nn.functional.normalize(text_feat - pred_feat, dim=-1)
+                    gt_to_text = torch.nn.functional.normalize(text_feat - gt_feat, dim=-1)
+                    direction_consistency = torch.nn.functional.cosine_similarity(pred_to_text, gt_to_text, dim=-1)
+                    semantic_text_loss = (1 - direction_consistency).mean()
+                elif self.semantic_text_loss_type == 'both':
+                    # 组合监督 - 距离 + 方向
+                    # 距离损失：拉近 pred 和 text
+                    distance_loss = (1 - pred_text_sim).mean()
+                    # 方向损失：对齐 pred 和 gt 的改进方向
+                    pred_to_text = torch.nn.functional.normalize(text_feat - pred_feat, dim=-1)
+                    gt_to_text = torch.nn.functional.normalize(text_feat - gt_feat, dim=-1)
+                    direction_consistency = torch.nn.functional.cosine_similarity(pred_to_text, gt_to_text, dim=-1)
+                    direction_loss = (1 - direction_consistency).mean()
+                    # 加权组合
+                    semantic_text_loss = self.semantic_distance_weight * distance_loss + \
+                                       self.semantic_direction_weight * direction_loss
+                else:
+                    # 距离监督（原始方法）- 直接拉近 pred 和 text
+                    semantic_text_loss = (1 - pred_text_sim).mean()
+
+                # 可靠性门控：如果 GT 比 pred 更接近文本，则增强监督
                 delta_text_sim = (gt_text_sim - pred_text_sim).detach()
-                if self.semantic_gate_type == 'sigmoid':
+                if self.semantic_gate_type == 'none':
+                    # 完全不使用gate
+                    semantic_gate_per_sample = torch.ones_like(delta_text_sim)
+                elif self.semantic_gate_type == 'sigmoid':
                     semantic_gate_per_sample = torch.sigmoid(delta_text_sim / self.semantic_gate_tau)
                     if self.semantic_gate_floor > 0:
                         semantic_gate_per_sample = self.semantic_gate_floor + \
                                                    (1.0 - self.semantic_gate_floor) * semantic_gate_per_sample
                 else:
+                    # clamp
                     semantic_gate_per_sample = torch.clamp(delta_text_sim, min=0.0)
                 semantic_gate = semantic_gate_per_sample.mean()
-                semantic_text_loss = (1 - pred_text_sim).mean()
 
                 current_epoch = gt_dict.get('epoch', 0)
                 lambda_semantic = self.get_semantic_weight(current_epoch)

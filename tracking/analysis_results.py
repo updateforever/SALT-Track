@@ -7,6 +7,7 @@ plt.rcParams['figure.figsize'] = [8, 8]
 
 from lib.test.analysis.plot_results import print_results
 from lib.test.evaluation import get_dataset, trackerlist
+from lib.test.evaluation.environment import env_settings
 
 
 def parse_args():
@@ -21,6 +22,8 @@ def parse_args():
                         help='optional run ids for repeated runs')
     parser.add_argument('--display_name', type=str, default=None,
                         help='optional tracker display name in result tables')
+    parser.add_argument('--run_tag', type=str, default=None,
+                        help='optional result bucket name used by tracking/test.py')
     parser.add_argument('--no_merge', action='store_true',
                         help='disable merge_results for repeated runs')
     parser.add_argument('--force_evaluation', action='store_true',
@@ -31,11 +34,18 @@ def parse_args():
 def main():
     args = parse_args()
 
+    settings = env_settings()
+
     trackers = trackerlist(name=args.tracker_name,
                            parameter_name=args.tracker_param,
                            dataset_name=args.dataset_name,
                            run_ids=args.run_ids,
                            display_name=args.display_name)
+
+    result_bucket = args.run_tag if args.run_tag else args.dataset_name
+    for t in trackers:
+        t.results_dir = f"{settings.save_dir}/{t.parameter_name}/{result_bucket}"
+        print(f"==> analyzing results from: {t.results_dir}/{args.dataset_name}")
 
     dataset = get_dataset(args.dataset_name)
 

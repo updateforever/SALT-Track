@@ -11,8 +11,8 @@ from lib.test.evaluation.running import run_dataset
 from lib.test.evaluation.tracker import Tracker, trackerlist
 from lib.test.evaluation.environment import env_settings
 
-def run_tracker(tracker_name, tracker_param, run_id=None, dataset_name='otb', sequence=None, debug=0, threads=0,ckpt_path="",
-                num_gpus=8):
+def run_tracker(tracker_name, tracker_param, run_id=None, dataset_name='otb', sequence=None, debug=0, threads=0,
+                ckpt_path="", num_gpus=8, run_tag=None):
     """Run tracker on sequence or dataset.
     args:
         tracker_name: Name of tracking method.
@@ -42,7 +42,8 @@ def run_tracker(tracker_name, tracker_param, run_id=None, dataset_name='otb', se
     trackers = trackerlist(name=tracker_name, parameter_name=tracker_param, dataset_name=dataset_name,
                            run_ids=run_id)
 
-    results_dir_item = os.path.join(results_dir,dataset_name )
+    result_bucket = run_tag if run_tag else dataset_name
+    results_dir_item = os.path.join(results_dir, result_bucket)
 
     trackers[0].results_eval_dir = results_dir_item
     trackers[0].results_dir = results_dir_item
@@ -67,6 +68,8 @@ def main():
     parser.add_argument('--debug', type=int, default=0, help='Debug level.')
     parser.add_argument('--threads', type=int, default=1, help='Number of threads.')
     parser.add_argument('--num_gpus', type=int, default=1)
+    parser.add_argument('--run_tag', type=str, default=None,
+                        help='Optional subdirectory name for saving evaluation results.')
 
 
     args = parser.parse_args()
@@ -77,7 +80,7 @@ def main():
         seq_name = args.sequence
 
     run_tracker(args.tracker_name, args.tracker_param, args.runid, args.dataset_name, seq_name, args.debug,
-                args.threads,args.ckpt_path, num_gpus=args.num_gpus)
+                args.threads, args.ckpt_path, num_gpus=args.num_gpus, run_tag=args.run_tag)
 
 
 if __name__ == '__main__':

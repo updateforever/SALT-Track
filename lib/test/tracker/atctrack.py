@@ -75,8 +75,12 @@ class ATCTRACK(BaseTracker):
     def __init__(self, params, dataset_name):
         super(ATCTRACK, self).__init__(params)
         network = build_atctrack(params.cfg,training=False)
-        network.load_state_dict(torch.load(self.params.checkpoint, map_location='cpu')['net'], strict=True)
+        missing_keys, unexpected_keys = network.load_state_dict(torch.load(self.params.checkpoint, map_location='cpu')['net'], strict=False)
         print("load from ",self.params.checkpoint)
+        if len(missing_keys) > 0:
+            print("Missing keys:", missing_keys)
+        if len(unexpected_keys) > 0:
+            print("Unexpected keys:", unexpected_keys)
 
         self.cfg = params.cfg
         self.seq_format = self.cfg.DATA.SEQ_FORMAT
