@@ -59,10 +59,16 @@ logs/
 *.tar
 *.gz
 *.rar
-asset/semantic_align_architecture.svg
-lib/models/atctrack/atctrack.py
-resource/pretrained_models/
 
+# Local assets / private resources
+resource/pretrained_models/
 archive_20260418/
-resume_training.sh
 auth.json
+
+# Generated experiment reports
+scripts/*.log
+scripts/*.csv
+tracking/batch_analysis_tnl2k_*.md
+tracking/batch_analysis_tnl2k_*.csv
+tracking/generalization_analysis_*.md
+tracking/generalization_analysis_*.csv

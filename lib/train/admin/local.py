@@ -7,7 +7,7 @@ def _project_root() -> Path:
 
 
 def _dataset_root() -> Path:
-    return Path("/root/user-data/PUBLIC_DATASETS")
+    return Path("/data/DATASETS_PUBLIC/")
 
 
 class EnvironmentSettings:
@@ -36,8 +36,8 @@ class EnvironmentSettings:
         self.otb99_dir = str(data_root / "OTB_lang")
 
         self.tnl2k_dir = str(data_root / "TNL2K" / "TNL2K_train_subset")
-        self.vasttrack_dir = str(data_root / "vasttrack")
-
+        self.vasttrack_dir = str(data_root / "vasttrack" / "unisot_train_final_backup")
+        
         # rgbt
         self.lasher_dir = str(data_root / "LasHeR" / "trainingset")
 

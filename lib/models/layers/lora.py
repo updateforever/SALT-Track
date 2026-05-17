@@ -27,6 +27,7 @@ class LoRALinear(nn.Module):
 
         self.lora_A = nn.Parameter(torch.zeros(rank, self.in_features))
         self.lora_B = nn.Parameter(torch.zeros(self.out_features, rank))
+        self.last_lora_out = None
         self.reset_parameters()
 
         self.base_layer.weight.requires_grad = False
@@ -49,7 +50,17 @@ class LoRALinear(nn.Module):
         base_out = self.base_layer(x)
         lora_out = F.linear(self.dropout(x), self.lora_A)
         lora_out = F.linear(lora_out, self.lora_B) * self.scaling
+        self.last_lora_out = lora_out
         return base_out + lora_out
+
+    def get_residual_energy(self):
+        """Return per-sample LoRA residual energy for training-time regularization."""
+        if self.last_lora_out is None:
+            return None
+        if self.last_lora_out.dim() == 0:
+            return None
+        batch_size = self.last_lora_out.shape[0]
+        return self.last_lora_out.float().reshape(batch_size, -1).pow(2).mean(dim=1)
 
 
 def _replace_linear_layers(module: nn.Module, rank: int, alpha: int, dropout: float, prefix: str = "") -> List[str]:
@@ -78,3 +89,14 @@ def apply_lora_to_modules(model: nn.Module,
             continue
         replaced.extend(_replace_linear_layers(target_module, rank, alpha, dropout, prefix=module_name))
     return replaced
+
+
+def collect_lora_residual_energies(model: nn.Module) -> List[torch.Tensor]:
+    """Collect per-sample residual energies from all active LoRA layers."""
+    energies = []
+    for module in model.modules():
+        if isinstance(module, LoRALinear):
+            energy = module.get_residual_energy()
+            if energy is not None:
+                energies.append(energy)
+    return energies

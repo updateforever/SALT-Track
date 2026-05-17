@@ -9,7 +9,7 @@ def _project_root() -> Path:
 
 
 def _dataset_root() -> Path:
-    return Path("/root/user-data/PUBLIC_DATASETS")
+    return Path("/data/DATASETS_PUBLIC")
 
 
 def local_env_settings():
@@ -39,11 +39,20 @@ def local_env_settings():
     settings.got_reports_path = ""
     settings.itb_path = str(data_root / "itb")
     settings.lasot_extension_subset_path = str(data_root / "lasot_extension_subset")
+    # mhf
     settings.lasot_lmdb_path = str(data_root / "lasot_lmdb")
+    settings.lasot_path = str(data_root / "lasot")
     settings.lasotlang_path = str(data_root / "lasot")
     settings.nfs_path = str(data_root / "nfs")
-    settings.otb_lang_path = str(data_root / "OTB_sentences")
-    settings.otb_path = str(data_root / "otb")
+# mhf
+    # 1. 指向存放 100 条视频序列图片的文件夹
+    settings.otb_path = str(data_root / "OTB_lang" / "OTB_videos")
+
+    # 2. 指向存放文本描述（JSON 或 TXT）的父目录
+    # 注意：脚本通常会自动在下面寻找 OTB_query_test 文件夹
+    settings.otblang_path = str(data_root / "OTB_lang")
+    # settings.otb_lang_path = str(data_root / "OTB_lang" / "OTB_query_test")
+    # settings.otb_path = str(data_root / "OTB_lang" / "OTB_query_test")
     settings.tc128_path = str(data_root / "TC128")
     settings.tn_packed_results_path = ""
     settings.tnl2k_path = str(data_root / "TNL2K" / "TNL2K_test_subset")

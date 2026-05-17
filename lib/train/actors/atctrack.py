@@ -6,6 +6,7 @@ from lib.utils.ce_utils import generate_mask_cond, adjust_keep_rate,generate_bbo
 from lib.train.admin import multigpu
 import torch.nn as nn
 from lib.utils.misc import NestedTensor
+from lib.models.layers.lora import collect_lora_residual_energies
 
 
 class ATCTrackActor(BaseActor):
@@ -20,6 +21,13 @@ class ATCTrackActor(BaseActor):
         self.task_cls_loss_fn = nn.CrossEntropyLoss()
         # reg loss
         self.confidence_reg_loss = nn.MSELoss()
+        self.lora_cfg = cfg.MODEL.get('LORA', None) if cfg else None
+        self.use_semantic_guided_lora = bool(self.lora_cfg and self.lora_cfg.get('ENABLED', False) and
+                                             self.lora_cfg.get('SEMANTIC_GUIDED', False))
+        self.lora_semantic_guide_weight = self.lora_cfg.get('SEMANTIC_GUIDE_WEIGHT', 0.0) \
+            if self.lora_cfg else 0.0
+        self.lora_semantic_guide_type = self.lora_cfg.get('SEMANTIC_GUIDE_TYPE', 'suppress_unreliable') \
+            if self.lora_cfg else 'suppress_unreliable'
 
         # 语义对齐相关配置
         self.use_semantic_align = cfg.MODEL.get('USE_SEMANTIC_ALIGN', False) if cfg else False
@@ -83,6 +91,32 @@ class ATCTrackActor(BaseActor):
             return self.semantic_weight_stage1  # Stage 1: 语义探索
         else:
             return self.semantic_weight_stage2  # Stage 2: 精细定位
+
+    def _align_lora_energy_to_target(self, energy: torch.Tensor, target_size: int) -> torch.Tensor:
+        """Align per-layer LoRA energy vectors to the semantic guide batch size.
+
+        Some LoRA layers run on temporally expanded tensors (e.g. B * num_search),
+        while others run on per-sample tensors (B). We reduce expanded energies back
+        to the semantic guide batch size before aggregation.
+        """
+        if energy is None:
+            return None
+        if energy.dim() != 1:
+            energy = energy.reshape(-1)
+
+        current_size = energy.numel()
+        if current_size == target_size:
+            return energy
+
+        if current_size % target_size == 0:
+            return energy.reshape(-1, target_size).mean(dim=0)
+
+        if target_size % current_size == 0:
+            repeat_factor = target_size // current_size
+            return energy.repeat_interleave(repeat_factor)
+
+        # Fallback: keep training robust even if some layer uses an unexpected layout.
+        return energy.mean().expand(target_size)
 
     def forward_pass(self, data):
         # assert len(data['template_images']) == 1
@@ -175,6 +209,7 @@ class ATCTrackActor(BaseActor):
         semantic_text_loss = torch.tensor(0.0, device=l1_loss.device)
         semantic_loss = torch.tensor(0.0, device=l1_loss.device)
         semantic_gate = torch.tensor(0.0, device=l1_loss.device)
+        lora_semantic_reg = torch.tensor(0.0, device=l1_loss.device)
         gt_text_similarity = torch.tensor(0.0, device=l1_loss.device)
         pred_text_similarity = torch.tensor(0.0, device=l1_loss.device)
 
@@ -231,6 +266,26 @@ class ATCTrackActor(BaseActor):
                     semantic_gate_per_sample = torch.clamp(delta_text_sim, min=0.0)
                 semantic_gate = semantic_gate_per_sample.mean()
 
+                if self.use_semantic_guided_lora and self.lora_semantic_guide_weight > 0:
+                    net = self.net.module if multigpu.is_multi_gpu(self.net) else self.net
+                    lora_energies = collect_lora_residual_energies(net)
+                    if len(lora_energies) > 0:
+                        if self.lora_semantic_guide_type == 'enhance_reliable':
+                            guide_weight = semantic_gate_per_sample
+                        else:
+                            guide_weight = 1.0 - semantic_gate_per_sample
+                        target_size = guide_weight.numel()
+                        aligned_energies = [
+                            self._align_lora_energy_to_target(energy, target_size)
+                            for energy in lora_energies
+                        ]
+                        lora_energy = torch.stack(aligned_energies, dim=0).mean(dim=0)
+                        lora_semantic_reg = (guide_weight * lora_energy).mean()
+                    else:
+                        lora_semantic_reg = torch.tensor(0.0, device=l1_loss.device)
+                else:
+                    lora_semantic_reg = torch.tensor(0.0, device=l1_loss.device)
+
                 current_epoch = gt_dict.get('epoch', 0)
                 lambda_semantic = self.get_semantic_weight(current_epoch)
                 semantic_loss = self.semantic_visual_weight * semantic_visual_loss + \
@@ -244,6 +299,8 @@ class ATCTrackActor(BaseActor):
         loss = self.loss_weight['giou'] * giou_loss + self.loss_weight['l1'] * l1_loss + \
                self.loss_weight['focal'] * location_loss + confidence_loss + \
                lambda_semantic * semantic_loss
+        if self.use_semantic_guided_lora and self.lora_semantic_guide_weight > 0:
+            loss = loss + lambda_semantic * self.lora_semantic_guide_weight * lora_semantic_reg
 
         if return_status:
             # status for log
@@ -265,6 +322,8 @@ class ATCTrackActor(BaseActor):
                 status["semantic_gate"] = semantic_gate.item()
                 status["gt_text_similarity"] = gt_text_similarity.item()
                 status["pred_text_similarity"] = pred_text_similarity.item()
+            if self.use_semantic_guided_lora:
+                status["Loss/lora_semantic_reg"] = lora_semantic_reg.item()
 
             return loss, status
         else:
